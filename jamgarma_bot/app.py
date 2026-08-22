@@ -8,8 +8,21 @@ from typing import Optional
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, WebAppInfo
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    ReplyKeyboardMarkup,
+    Update,
+    WebAppInfo,
+)
+from telegram.ext import (
+    Application,
+    CallbackQueryHandler,
+    CommandHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
+)
 
 import db
 
@@ -28,22 +41,223 @@ CATEGORIES = {
     "boshqa": ("Boshqa", "🗂️"),
 }
 
+MENU_EXPENSE = "📉 Xarajat"
+MENU_INCOME = "📈 Kirim"
+MENU_SAVE_ADD = "🏦 Jamg'armaga qo'shish"
+MENU_SAVE_WITHDRAW = "🔓 Jamg'armadan yechish"
+MENU_SAVE_VIEW = "🎯 Jamg'arma"
+MENU_BALANCE = "📊 Balans"
+MENU_HISTORY = "🗒 Tarix"
+
+MAIN_KEYBOARD = ReplyKeyboardMarkup(
+    [
+        [MENU_EXPENSE, MENU_INCOME],
+        [MENU_SAVE_ADD, MENU_SAVE_WITHDRAW],
+        [MENU_SAVE_VIEW, MENU_BALANCE],
+        [MENU_HISTORY],
+    ],
+    resize_keyboard=True,
+)
+
 app = FastAPI()
 application = Application.builder().token(BOT_TOKEN).build()
 
 
-# ---------- Telegram bot: /start ochadigan Mini App tugmasi ----------
+def fmt(n):
+    return f"{n:,}".replace(",", " ")
+
+
+def category_keyboard():
+    buttons, row = [], []
+    for key, (label, emoji) in CATEGORIES.items():
+        row.append(InlineKeyboardButton(f"{emoji} {label}", callback_data=f"cat:{key}"))
+        if len(row) == 2:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+    return InlineKeyboardMarkup(buttons)
+
+
+def parse_amount(text):
+    digits = text.replace(" ", "").replace("so'm", "").replace("som", "")
+    return int(digits) if digits.isdigit() else None
+
+
+# ---------- Bot: /start ----------
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data.clear()
     if PUBLIC_URL:
         kb = InlineKeyboardMarkup(
-            [[InlineKeyboardButton("📊 Ilovani ochish", web_app=WebAppInfo(url=PUBLIC_URL))]]
+            [[InlineKeyboardButton("📊 Mini App'ni ochish", web_app=WebAppInfo(url=PUBLIC_URL))]]
         )
         await update.message.reply_text("Xarajat va jamg'arma ilovangiz tayyor 👇", reply_markup=kb)
+    await update.message.reply_text(
+        "Yoki quyidagi tugmalar orqali to'g'ridan-to'g'ri botdan foydalanishingiz mumkin:",
+        reply_markup=MAIN_KEYBOARD,
+    )
+
+
+async def balans_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    balance = db.get_balance(user_id)
+    income, expense = db.get_monthly_totals(user_id)
+    savings = db.get_savings_total(user_id)
+    text = (
+        f"📊 <b>Umumiy balans:</b> {fmt(balance)} so'm\n\n"
+        f"📈 Bu oy kirim: {fmt(income)} so'm\n"
+        f"📉 Bu oy chiqim: {fmt(expense)} so'm\n\n"
+        f"🏦 Jamg'armada: <b>{fmt(savings)} so'm</b>"
+    )
+    await update.message.reply_text(text, parse_mode="HTML")
+
+
+async def jamgarma_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    total = db.get_savings_total(user_id)
+    log = db.get_savings_log(user_id, 8)
+    lines = [f"🎯 <b>Jamg'armangiz: {fmt(total)} so'm</b>", ""]
+    if not log:
+        lines.append("Hali jamg'armaga hech narsa qo'shilmagan.")
     else:
-        await update.message.reply_text("Ilova hali sozlanmagan (PUBLIC_URL yo'q).")
+        lines.append("Oxirgi harakatlar:")
+        for row in log:
+            sign = "+" if row["amount"] >= 0 else ""
+            note = f" — {row['note']}" if row["note"] else ""
+            lines.append(f"{sign}{fmt(row['amount'])} so'm ({row['tx_date']}){note}")
+    await update.message.reply_text("\n".join(lines), parse_mode="HTML")
+
+
+async def tarix_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    rows = db.get_all_transactions(user_id, 10)
+    if not rows:
+        await update.message.reply_text("Hali hech qanday yozuv yo'q.")
+        return
+    lines = ["🗒 <b>Oxirgi yozuvlar:</b>", ""]
+    for row in rows:
+        if row["type"] == "income":
+            lines.append(f"📈 +{fmt(row['amount'])} so'm — {row['tx_date']}")
+        else:
+            label, emoji = CATEGORIES.get(row["category"], ("Boshqa", "🗂️"))
+            lines.append(f"📉 -{fmt(row['amount'])} so'm {emoji} {label} — {row['tx_date']}")
+    await update.message.reply_text("\n".join(lines), parse_mode="HTML")
+
+
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text.strip()
+    user_id = update.effective_user.id
+    awaiting = context.user_data.get("awaiting")
+
+    if text == MENU_EXPENSE:
+        context.user_data["awaiting"] = "exp_amount"
+        await update.message.reply_text("Xarajat summasini kiriting (so'mda), masalan: 25000")
+        return
+    if text == MENU_INCOME:
+        context.user_data["awaiting"] = "inc_amount"
+        await update.message.reply_text("Kirim summasini kiriting (so'mda), masalan: 500000")
+        return
+    if text == MENU_SAVE_ADD:
+        context.user_data["awaiting"] = "sav_add_amount"
+        await update.message.reply_text("Jamg'armaga qo'shmoqchi bo'lgan summani kiriting (so'mda):")
+        return
+    if text == MENU_SAVE_WITHDRAW:
+        context.user_data["awaiting"] = "sav_out_amount"
+        await update.message.reply_text("Jamg'armadan yechmoqchi bo'lgan summani kiriting (so'mda):")
+        return
+    if text == MENU_SAVE_VIEW:
+        await jamgarma_cmd(update, context)
+        return
+    if text == MENU_BALANCE:
+        await balans_cmd(update, context)
+        return
+    if text == MENU_HISTORY:
+        await tarix_cmd(update, context)
+        return
+
+    if awaiting == "exp_amount":
+        amount = parse_amount(text)
+        if not amount or amount <= 0:
+            await update.message.reply_text("Iltimos, faqat musbat raqam kiriting. Masalan: 25000")
+            return
+        context.user_data["pending_amount"] = amount
+        context.user_data["awaiting"] = "exp_category"
+        await update.message.reply_text("Qaysi kategoriya?", reply_markup=category_keyboard())
+        return
+
+    if awaiting == "inc_amount":
+        amount = parse_amount(text)
+        if not amount or amount <= 0:
+            await update.message.reply_text("Iltimos, faqat musbat raqam kiriting. Masalan: 500000")
+            return
+        db.add_transaction(user_id, "income", amount, None, None)
+        context.user_data.clear()
+        await update.message.reply_text(
+            f"✅ Kirim qo'shildi: +{fmt(amount)} so'm\nYangi balans: {fmt(db.get_balance(user_id))} so'm",
+            reply_markup=MAIN_KEYBOARD,
+        )
+        return
+
+    if awaiting == "sav_add_amount":
+        amount = parse_amount(text)
+        if not amount or amount <= 0:
+            await update.message.reply_text("Iltimos, faqat musbat raqam kiriting. Masalan: 100000")
+            return
+        db.add_savings(user_id, amount, None)
+        context.user_data.clear()
+        await update.message.reply_text(
+            f"✅ Jamg'armaga qo'shildi: +{fmt(amount)} so'm\nJami jamg'arma: {fmt(db.get_savings_total(user_id))} so'm",
+            reply_markup=MAIN_KEYBOARD,
+        )
+        return
+
+    if awaiting == "sav_out_amount":
+        amount = parse_amount(text)
+        if not amount or amount <= 0:
+            await update.message.reply_text("Iltimos, faqat musbat raqam kiriting. Masalan: 50000")
+            return
+        current = db.get_savings_total(user_id)
+        if amount > current:
+            await update.message.reply_text(
+                f"Jamg'armangizda faqat {fmt(current)} so'm bor, {fmt(amount)} so'm yecha olmaysiz."
+            )
+            context.user_data.clear()
+            return
+        db.add_savings(user_id, -amount, "yechildi")
+        context.user_data.clear()
+        await update.message.reply_text(
+            f"✅ Jamg'armadan yechildi: -{fmt(amount)} so'm\nJami jamg'arma: {fmt(db.get_savings_total(user_id))} so'm",
+            reply_markup=MAIN_KEYBOARD,
+        )
+        return
+
+    await update.message.reply_text("Quyidagi tugmalardan birini tanlang 👇", reply_markup=MAIN_KEYBOARD)
+
+
+async def handle_category(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user_id = query.from_user.id
+    key = query.data.split(":", 1)[1]
+    amount = context.user_data.get("pending_amount")
+    if amount is None:
+        await query.edit_message_text("Xatolik: summa topilmadi, qaytadan urinib ko'ring.")
+        return
+    db.add_transaction(user_id, "expense", amount, key, None)
+    context.user_data.clear()
+    label, emoji = CATEGORIES[key]
+    await query.edit_message_text(
+        f"✅ Xarajat qo'shildi: -{fmt(amount)} so'm {emoji} {label}\n"
+        f"Yangi balans: {fmt(db.get_balance(user_id))} so'm"
+    )
 
 
 application.add_handler(CommandHandler("start", start_cmd))
+application.add_handler(CommandHandler("balans", balans_cmd))
+application.add_handler(CommandHandler("jamgarma", jamgarma_cmd))
+application.add_handler(CommandHandler("tarix", tarix_cmd))
+application.add_handler(CallbackQueryHandler(handle_category, pattern=r"^cat:"))
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
 
 @app.on_event("startup")
