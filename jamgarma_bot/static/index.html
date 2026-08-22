@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Xarajat daftari</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,800&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@500;700&display=swap');
+
+  :root {
+    --bg: #11151d;
+    --surface: #1b212c;
+    --surfaceAlt: #232a37;
+    --ink: #eae5d8;
+    --inkMuted: #8891a1;
+    --gold: #d3a24c;
+    --line: #2a3140;
+    --income: #5cd6a0;
+    --expense: #e5555a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Inter', system-ui, sans-serif;
+    padding-bottom: 100px;
+  }
+  h1, h2, h3 { font-family: 'Fraunces', Georgia, serif; margin: 0; }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+  .px { padding-left: 20px; padding-right: 20px; }
+
+  .header { padding: 28px 20px 4px; }
+  .eyebrow { color: var(--gold); letter-spacing: 0.15em; font-size: 12px; font-weight: 600; text-transform: uppercase; margin-bottom: 4px; }
+  .title { font-size: 24px; font-weight: 700; }
+
+  .card {
+    background: var(--surface);
+    border-radius: 24px;
+    padding: 24px 24px 30px;
+    position: relative;
+    margin: 16px 20px 0;
+  }
+  .stamp {
+    position: absolute; top: -12px; right: 18px; width: 74px; height: 74px;
+    border-radius: 50%; border: 2px dashed var(--gold); background: var(--bg);
+    transform: rotate(-9deg); display: flex; flex-direction: column; align-items: center; justify-content: center;
+  }
+  .stamp span { color: var(--gold); }
+  .stamp .month { font-family: 'Fraunces', serif; font-size: 10px; font-weight: 700; letter-spacing: 1px; }
+  .stamp .sub { font-family: 'JetBrains Mono', monospace; font-size: 9px; }
+  .label-muted { color: var(--inkMuted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
+  .balance { font-size: 30px; font-weight: 700; }
+  .balance .unit { font-size: 16px; color: var(--inkMuted); font-family: 'Inter', sans-serif; }
+  .stats-row { display: flex; gap: 20px; margin-top: 18px; }
+  .stat { display: flex; align-items: center; gap: 8px; }
+  .stat-label { color: var(--inkMuted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .stat-value { font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 600; }
+  .perf {
+    position: absolute; left: 0; right: 0; bottom: -7px; height: 14px;
+    background-image: radial-gradient(circle at 7px 7px, var(--bg) 6px, transparent 7px);
+    background-size: 14px 14px; background-position: left top;
+  }
+
+  .quick-actions { display: flex; gap: 12px; padding: 20px 20px 0; }
+  .quick-btn {
+    flex: 1; background: var(--surface); border: 1px solid var(--line); color: var(--ink);
+    border-radius: 16px; padding: 12px; font-size: 14px; font-weight: 600; display: flex;
+    align-items: center; justify-content: center; gap: 8px; cursor: pointer;
+  }
+
+  .section-title { font-size: 16px; font-weight: 600; margin: 28px 20px 12px; }
+  .cat-row { display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 12px; color: var(--inkMuted); }
+  .cat-bar-bg { background: var(--surfaceAlt); height: 8px; border-radius: 999px; overflow: hidden; }
+  .cat-bar-fill { height: 100%; border-radius: 999px; transition: width 0.6s ease; }
+  .cat-item { margin: 0 20px 12px; }
+
+  .empty { text-align: center; padding: 48px 20px; color: var(--inkMuted); font-size: 14px; line-height: 1.6; }
+  .empty .big { font-size: 32px; }
+
+  .day-group { padding: 0 20px; }
+  .day-header { display: flex; justify-content: space-between; align-items: baseline; margin: 20px 0 4px; }
+  .day-header h3 { color: var(--gold); font-size: 13px; letter-spacing: 0.05em; text-transform: uppercase; }
+  .day-net { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; }
+  .tx-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .tx-left { display: flex; align-items: center; gap: 12px; }
+  .tx-icon { width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+  .tx-label { font-size: 14px; font-weight: 500; }
+  .tx-note { font-size: 11px; color: var(--inkMuted); }
+  .tx-right { display: flex; align-items: center; gap: 12px; }
+  .tx-amount { font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 600; }
+  .tx-del { background: none; border: none; color: var(--inkMuted); cursor: pointer; padding: 4px; }
+
+  .fab {
+    position: fixed; bottom: 24px; right: 20px; width: 56px; height: 56px; border-radius: 50%;
+    background: var(--gold); color: #1b1204; border: none; font-size: 26px; cursor: pointer;
+    box-shadow: 0 8px 24px rgba(211,162,76,0.35); z-index: 40; display: flex; align-items: center; justify-content: center;
+  }
+
+  .overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.55); display: flex; align-items: flex-end;
+    justify-content: center; z-index: 50;
+  }
+  .sheet {
+    background: var(--surface); width: 100%; max-width: 480px; border-radius: 24px 24px 0 0;
+    padding: 20px 24px 32px; animation: slideUp 0.2s ease-out; max-height: 88vh; overflow-y: auto;
+  }
+  @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+  .sheet-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .sheet-header h3 { font-size: 18px; font-weight: 600; }
+  .close-btn { background: none; border: none; color: var(--inkMuted); font-size: 20px; cursor: pointer; }
+
+  .type-toggle { display: flex; background: var(--surfaceAlt); border-radius: 14px; padding: 4px; }
+  .type-toggle button { flex: 1; border: none; background: transparent; border-radius: 10px; padding: 10px; font-size: 14px; font-weight: 600; color: var(--inkMuted); cursor: pointer; }
+  .type-toggle button.active-expense { background: var(--bg); color: var(--expense); }
+  .type-toggle button.active-income { background: var(--bg); color: var(--income); }
+
+  .amount-input-wrap { text-align: center; padding: 16px 0; display: flex; align-items: center; justify-content: center; gap: 8px; }
+  .amount-input { font-family: 'JetBrains Mono', monospace; font-size: 36px; font-weight: 700; background: transparent; border: none; outline: none; color: var(--ink); text-align: right; width: 65%; }
+  .amount-unit { font-family: 'JetBrains Mono', monospace; color: var(--inkMuted); font-size: 18px; }
+
+  .cat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .cat-btn { display: flex; flex-direction: column; align-items: center; gap: 4px; border-radius: 16px; padding: 12px 4px; background: var(--surfaceAlt); border: 1.5px solid var(--line); cursor: pointer; }
+  .cat-btn .emoji { font-size: 22px; }
+  .cat-btn .label { font-size: 10px; color: var(--inkMuted); text-align: center; line-height: 1.2; }
+
+  .text-input, .date-input {
+    width: 100%; background: var(--surfaceAlt); color: var(--ink); border: 1px solid var(--line);
+    border-radius: 12px; padding: 10px 12px; font-size: 14px; font-family: inherit;
+  }
+  .field-label { color: var(--inkMuted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; margin: 18px 0 8px; }
+
+  .submit-btn {
+    width: 100%; border: none; border-radius: 16px; padding: 15px; font-size: 15px; font-weight: 600;
+    margin-top: 22px; cursor: pointer;
+  }
+
+  .savings-log-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+  .loading-screen { display: flex; align-items: center; justify-content: center; min-height: 100vh; color: var(--gold); font-size: 14px; }
+</style>
+</head>
+<body>
+<div id="app"><div class="loading-screen">Yuklanmoqda...</div></div>
+
+<script>
+const CATEGORIES = {
+  ovqat: { label: 'Ovqat', emoji: '🍲', color: '#e8783f' },
+  transport: { label: 'Transport', emoji: '🚌', color: '#4a90c4' },
+  kiyim: { label: 'Kiyim', emoji: '👕', color: '#b47fd1' },
+  kongilochar: { label: "Ko'ngilochar", emoji: '🎬', color: '#e85f8f' },
+  kommunal: { label: 'Kommunal', emoji: '💡', color: '#5fb87e' },
+  sogliq: { label: "Sog'liq", emoji: '💊', color: '#e5555a' },
+  talim: { label: "Ta'lim", emoji: '📚', color: '#d4a24c' },
+  boshqa: { label: 'Boshqa', emoji: '🗂️', color: '#8a94a6' },
+};
+const MONTHS = ['yanvar','fevral','mart','aprel','may','iyun','iyul','avgust','sentabr','oktabr','noyabr','dekabr'];
+
+const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+if (tg) { tg.ready(); tg.expand(); tg.setHeaderColor('#11151d'); tg.setBackgroundColor('#11151d'); }
+const initData = tg ? tg.initData : '';
+
+let summary = { balance: 0, monthlyIncome: 0, monthlyExpense: 0, savings: 0, transactions: [] };
+let sheetOpen = false;
+let savingsSheetOpen = false;
+let txType = 'expense';
+let amount = '';
+let categoryId = null;
+let dateStr = todayLocal();
+
+function todayLocal() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function yesterdayLocal() {
+  const d = new Date(); d.setDate(d.getDate()-1);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function fmt(n) { return String(Math.round(Math.abs(n))).replace(/\B(?=(\d{3})+(?!\d))/g, ' '); }
+function fmtSigned(n) { const s = n < 0 ? '-' : n > 0 ? '+' : ''; return s + fmt(n); }
+function dateLabel(d) {
+  if (d === todayLocal()) return 'Bugun';
+  if (d === yesterdayLocal()) return 'Kecha';
+  const [y,m,dd] = d.split('-').map(Number);
+  const cy = new Date().getFullYear();
+  return y === cy ? `${dd}-${MONTHS[m-1]}` : `${dd}-${MONTHS[m-1]}, ${y}`;
+}
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    ...opts,
+    headers: { 'Content-Type': 'application/json', 'X-Init-Data': initData, ...(opts.headers || {}) },
+  });
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+async function loadSummary() {
+  summary = await api('/api/summary');
+  render();
+}
+
+async function addTx() {
+  const amt = parseInt(amount, 10);
+  if (!amt || amt <= 0) return;
+  if (txType === 'expense' && !categoryId) return;
+  await api('/api/tx', { method: 'POST', body: JSON.stringify({ type: txType, amount: amt, category: categoryId, date: dateStr }) });
+  sheetOpen = false; amount = ''; categoryId = null; dateStr = todayLocal();
+  await loadSummary();
+}
+
+async function deleteTx(id) {
+  await api('/api/tx/' + id, { method: 'DELETE' });
+  await loadSummary();
+}
+
+let savingsData = { total: 0, log: [] };
+async function loadSavings() {
+  savingsData = await api('/api/savings');
+  render();
+}
+async function addSavings(delta) {
+  const amt = parseInt(amount, 10);
+  if (!amt || amt <= 0) return;
+  await api('/api/savings', { method: 'POST', body: JSON.stringify({ amount: delta > 0 ? amt : -amt, note: null }) });
+  amount = '';
+  await loadSummary();
+  await loadSavings();
+}
+
+function computeCategoryTotals() {
+  const monthKey = todayLocal().slice(0,7);
+  const map = {};
+  summary.transactions.filter(t => t.type === 'expense' && t.tx_date.slice(0,7) === monthKey)
+    .forEach(t => { map[t.category] = (map[t.category] || 0) + t.amount; });
+  return Object.entries(map).map(([id, total]) => ({ id, total, ...CATEGORIES[id] })).sort((a,b) => b.total - a.total);
+}
+
+function groupByDate() {
+  const map = {};
+  summary.transactions.forEach(t => { (map[t.tx_date] = map[t.tx_date] || []).push(t); });
+  return Object.keys(map).sort((a,b) => b.localeCompare(a)).map(d => {
+    const items = map[d];
+    const income = items.filter(i => i.type === 'income').reduce((s,i) => s+i.amount, 0);
+    const expense = items.filter(i => i.type === 'expense').reduce((s,i) => s+i.amount, 0);
+    return { date: d, items, net: income - expense };
+  });
+}
+
+function categoryButtonsHtml() {
+  return Object.entries(CATEGORIES).map(([id, c]) => `
+    <button class="cat-btn" style="background:${categoryId===id ? c.color+'26' : 'var(--surfaceAlt)'};border-color:${categoryId===id ? c.color : 'var(--line)'}" onclick="selectCategory('${id}')">
+      <span class="emoji">${c.emoji}</span>
+      <span class="label" style="color:${categoryId===id ? c.color : 'var(--inkMuted)'}">${c.label}</span>
+    </button>
+  `).join('');
+}
+
+function txRowHtml(t) {
+  const isIncome = t.type === 'income';
+  const cat = isIncome ? null : CATEGORIES[t.category] || CATEGORIES.boshqa;
+  return `
+    <div class="tx-row">
+      <div class="tx-left">
+        <div class="tx-icon" style="background:${isIncome ? 'var(--income)22' : cat.color+'22'}">${isIncome ? '💰' : cat.emoji}</div>
+        <div>
+          <div class="tx-label">${isIncome ? 'Kirim' : cat.label}</div>
+        </div>
+      </div>
+      <div class="tx-right">
+        <span class="tx-amount mono" style="color:${isIncome ? 'var(--income)' : 'var(--ink)'}">${isIncome ? '+' : '-'}${fmt(t.amount)} so'm</span>
+        <button class="tx-del" onclick="deleteTx(${t.id})">🗑</button>
+      </div>
+    </div>
+  `;
+}
+
+function render() {
+  const monthAbbrev = MONTHS[new Date().getMonth()].slice(0,4).toUpperCase();
+  const catTotals = computeCategoryTotals();
+  const groups = groupByDate();
+
+  const catChartHtml = catTotals.length === 0
+    ? `<p style="color:var(--inkMuted);font-size:14px;margin:0 20px;">Bu oy hali xarajat yo'q.</p>`
+    : catTotals.map(c => {
+        const pct = summary.monthlyExpense ? Math.round((c.total / summary.monthlyExpense) * 100) : 0;
+        return `
+          <div class="cat-item">
+            <div class="cat-row"><span>${c.emoji} ${c.label}</span><span class="mono">${fmt(c.total)} so'm · ${pct}%</span></div>
+            <div class="cat-bar-bg"><div class="cat-bar-fill" style="width:${pct}%;background:${c.color}"></div></div>
+          </div>
+        `;
+      }).join('');
+
+  const historyHtml = summary.transactions.length === 0
+    ? `<div class="empty"><div class="big">🧾</div>Hali hech narsa kiritilmagan.<br/>Pastdagi + tugmasi orqali boshlang.</div>`
+    : groups.map(g => `
+        <div class="day-group">
+          <div class="day-header">
+            <h3>${dateLabel(g.date)}</h3>
+            <span class="day-net mono" style="color:${g.net>0?'var(--income)':g.net<0?'var(--expense)':'var(--inkMuted)'}">${fmtSigned(g.net)} so'm</span>
+          </div>
+          ${g.items.map(txRowHtml).join('')}
+        </div>
+      `).join('');
+
+  document.getElementById('app').innerHTML = `
+    <div class="header">
+      <div class="eyebrow">Kunlik hisob</div>
+      <h1 class="title">Xarajat daftari</h1>
+    </div>
+
+    <div class="card">
+      <div class="stamp"><span class="month">${monthAbbrev}</span><span class="sub">BALANS</span></div>
+      <div class="label-muted">Umumiy balans</div>
+      <div class="balance mono" style="color:${summary.balance<0?'var(--expense)':'var(--ink)'}">${fmtSigned(summary.balance)}<span class="unit"> so'm</span></div>
+      <div class="stats-row">
+        <div class="stat"><div><div class="stat-label">Kirim (oy)</div><div class="stat-value" style="color:var(--income)">${fmt(summary.monthlyIncome)}</div></div></div>
+        <div class="stat"><div><div class="stat-label">Chiqim (oy)</div><div class="stat-value" style="color:var(--expense)">${fmt(summary.monthlyExpense)}</div></div></div>
+      </div>
+      <div class="perf"></div>
+    </div>
+
+    <div class="quick-actions">
+      <button class="quick-btn" onclick="openSheet('expense')">📉 Xarajat</button>
+      <button class="quick-btn" onclick="openSheet('income')">📈 Kirim</button>
+      <button class="quick-btn" onclick="openSavingsSheet()">🎯 Jamg'arma</button>
+    </div>
+
+    <div class="section-title">Kategoriyalar bo'yicha (bu oy)</div>
+    ${catChartHtml}
+
+    <div class="section-title">Amaliyotlar tarixi</div>
+    ${historyHtml}
+
+    <button class="fab" onclick="openSheet('expense')">+</button>
+
+    ${sheetOpen ? txSheetHtml() : ''}
+    ${savingsSheetOpen ? savingsSheetHtml() : ''}
+  `;
+
+  const amtEl = document.getElementById('amountInput');
+  if (amtEl) { amtEl.focus(); amtEl.oninput = (e) => { amount = e.target.value.replace(/\D/g,''); e.target.value = amount ? fmt(amount) : ''; }; }
+}
+
+function txSheetHtml() {
+  return `
+    <div class="overlay" onclick="closeSheet(event)">
+      <div class="sheet" onclick="event.stopPropagation()">
+        <div class="sheet-header">
+          <h3>${txType === 'expense' ? 'Yangi xarajat' : 'Yangi kirim'}</h3>
+          <button class="close-btn" onclick="sheetOpen=false;render()">✕</button>
+        </div>
+        <div class="type-toggle">
+          <button class="${txType==='expense'?'active-expense':''}" onclick="setTxType('expense')">Xarajat</button>
+          <button class="${txType==='income'?'active-income':''}" onclick="setTxType('income')">Kirim</button>
+        </div>
+        <div class="amount-input-wrap">
+          <input id="amountInput" class="amount-input" type="text" inputmode="numeric" placeholder="0" value="${amount ? fmt(amount) : ''}" style="color:${txType==='income'?'var(--income)':'var(--ink)'}" />
+          <span class="amount-unit">so'm</span>
+        </div>
+        ${txType === 'expense' ? `
+          <div class="field-label">Kategoriya</div>
+          <div class="cat-grid">${categoryButtonsHtml()}</div>
+        ` : ''}
+        <div class="field-label">Sana</div>
+        <input class="date-input" type="date" value="${dateStr}" max="${todayLocal()}" onchange="dateStr=this.value" />
+        <button class="submit-btn" style="background:${(!amount||(txType==='expense'&&!categoryId))?'var(--line)':(txType==='income'?'var(--income)':'var(--gold)')};color:${(!amount||(txType==='expense'&&!categoryId))?'var(--inkMuted)':'#0e1712'}" onclick="addTx()">Qo'shish</button>
+      </div>
+    </div>
+  `;
+}
+
+function savingsSheetHtml() {
+  const logHtml = savingsData.log.length === 0
+    ? `<p style="color:var(--inkMuted);font-size:13px;">Hali jamg'armaga hech narsa qo'shilmagan.</p>`
+    : savingsData.log.map(r => `
+        <div class="savings-log-row">
+          <span style="color:${r.amount>=0?'var(--income)':'var(--expense)'}" class="mono">${r.amount>=0?'+':''}${fmt(r.amount)} so'm</span>
+          <span style="color:var(--inkMuted)">${r.tx_date}</span>
+        </div>
+      `).join('');
+  return `
+    <div class="overlay" onclick="closeSavingsSheet(event)">
+      <div class="sheet" onclick="event.stopPropagation()">
+        <div class="sheet-header">
+          <h3>🎯 Jamg'arma</h3>
+          <button class="close-btn" onclick="savingsSheetOpen=false;render()">✕</button>
+        </div>
+        <div class="balance mono" style="text-align:center;margin:8px 0 20px;">${fmt(savingsData.total)}<span class="unit"> so'm</span></div>
+        <div class="amount-input-wrap">
+          <input id="amountInput" class="amount-input" type="text" inputmode="numeric" placeholder="0" value="${amount ? fmt(amount) : ''}" />
+          <span class="amount-unit">so'm</span>
+        </div>
+        <div style="display:flex;gap:12px;margin-top:8px;">
+          <button class="submit-btn" style="background:var(--income);color:#0e1712;margin-top:0;" onclick="addSavings(1)">+ Qo'shish</button>
+          <button class="submit-btn" style="background:var(--surfaceAlt);color:var(--ink);margin-top:0;border:1px solid var(--line);" onclick="addSavings(-1)">- Yechish</button>
+        </div>
+        <div class="field-label">Tarix</div>
+        ${logHtml}
+      </div>
+    </div>
+  `;
+}
+
+function openSheet(type) { txType = type; amount = ''; categoryId = null; dateStr = todayLocal(); sheetOpen = true; render(); }
+function closeSheet(e) { if (e.target.classList.contains('overlay')) { sheetOpen = false; render(); } }
+function setTxType(t) { txType = t; categoryId = null; render(); }
+function selectCategory(id) { categoryId = id; render(); }
+function openSavingsSheet() { amount = ''; savingsSheetOpen = true; loadSavings(); }
+function closeSavingsSheet(e) { if (e.target.classList.contains('overlay')) { savingsSheetOpen = false; render(); } }
+
+loadSummary().catch(err => {
+  document.getElementById('app').innerHTML = `<div class="loading-screen" style="color:var(--expense);text-align:center;padding:20px;">Xatolik: ${err.message}<br/><br/>Iltimos, botni Telegram ichidan oching.</div>`;
+});
+</script>
+</body>
+</html>
