@@ -18,8 +18,9 @@ def init_db():
         CREATE TABLE IF NOT EXISTS transactions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
-            type TEXT NOT NULL,          -- 'expense' | 'income'
-            amount INTEGER NOT NULL,
+            type TEXT NOT NULL,
+            amount REAL NOT NULL,
+            currency TEXT NOT NULL DEFAULT 'UZS',
             category TEXT,
             note TEXT,
             tx_date TEXT NOT NULL,
@@ -32,25 +33,32 @@ def init_db():
         CREATE TABLE IF NOT EXISTS savings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
-            amount INTEGER NOT NULL,      -- musbat = qo'shildi, manfiy = yechildi
+            amount REAL NOT NULL,
+            currency TEXT NOT NULL DEFAULT 'UZS',
             note TEXT,
             tx_date TEXT NOT NULL,
             created_at TEXT NOT NULL
         )
         """
     )
+    for table in ("transactions", "savings"):
+        cols = [r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()]
+        if "currency" not in cols:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN currency TEXT NOT NULL DEFAULT 'UZS'")
     conn.commit()
     conn.close()
 
 
-def add_transaction(user_id, ttype, amount, category, note, tx_date=None):
+def add_transaction(user_id, ttype, amount, category, note, tx_date=None, currency="UZS"):
     conn = get_conn()
     conn.execute(
-        "INSERT INTO transactions (user_id, type, amount, category, note, tx_date, created_at) VALUES (?,?,?,?,?,?,?)",
+        "INSERT INTO transactions (user_id, type, amount, currency, category, note, tx_date, created_at) "
+        "VALUES (?,?,?,?,?,?,?,?)",
         (
             user_id,
             ttype,
             amount,
+            currency,
             category,
             note,
             tx_date or date.today().isoformat(),
@@ -68,45 +76,50 @@ def delete_transaction(user_id, tx_id):
     conn.close()
 
 
-def add_savings(user_id, amount, note, tx_date=None):
+def add_savings(user_id, amount, note, tx_date=None, currency="UZS"):
     conn = get_conn()
     conn.execute(
-        "INSERT INTO savings (user_id, amount, note, tx_date, created_at) VALUES (?,?,?,?,?)",
-        (user_id, amount, note, tx_date or date.today().isoformat(), datetime.now().isoformat()),
+        "INSERT INTO savings (user_id, amount, currency, note, tx_date, created_at) VALUES (?,?,?,?,?,?)",
+        (user_id, amount, currency, note, tx_date or date.today().isoformat(), datetime.now().isoformat()),
     )
     conn.commit()
     conn.close()
 
 
-def get_balance(user_id):
+def get_balance(user_id, currency="UZS"):
     conn = get_conn()
     row = conn.execute(
         "SELECT COALESCE(SUM(CASE WHEN type='income' THEN amount ELSE -amount END),0) as bal "
-        "FROM transactions WHERE user_id=?",
-        (user_id,),
+        "FROM transactions WHERE user_id=? AND currency=?",
+        (user_id, currency),
     ).fetchone()
     conn.close()
     return row["bal"]
 
 
-def get_monthly_totals(user_id):
+def get_monthly_totals(user_id, currency="UZS"):
     month_key = date.today().strftime("%Y-%m")
     conn = get_conn()
     income = conn.execute(
-        "SELECT COALESCE(SUM(amount),0) as s FROM transactions WHERE user_id=? AND type='income' AND tx_date LIKE ?",
-        (user_id, f"{month_key}%"),
+        "SELECT COALESCE(SUM(amount),0) as s FROM transactions "
+        "WHERE user_id=? AND type='income' AND currency=? AND tx_date LIKE ?",
+        (user_id, currency, f"{month_key}%"),
     ).fetchone()["s"]
     expense = conn.execute(
-        "SELECT COALESCE(SUM(amount),0) as s FROM transactions WHERE user_id=? AND type='expense' AND tx_date LIKE ?",
-        (user_id, f"{month_key}%"),
+        "SELECT COALESCE(SUM(amount),0) as s FROM transactions "
+        "WHERE user_id=? AND type='expense' AND currency=? AND tx_date LIKE ?",
+        (user_id, currency, f"{month_key}%"),
     ).fetchone()["s"]
     conn.close()
     return income, expense
 
 
-def get_savings_total(user_id):
+def get_savings_total(user_id, currency="UZS"):
     conn = get_conn()
-    row = conn.execute("SELECT COALESCE(SUM(amount),0) as s FROM savings WHERE user_id=?", (user_id,)).fetchone()
+    row = conn.execute(
+        "SELECT COALESCE(SUM(amount),0) as s FROM savings WHERE user_id=? AND currency=?",
+        (user_id, currency),
+    ).fetchone()
     conn.close()
     return row["s"]
 
@@ -114,7 +127,7 @@ def get_savings_total(user_id):
 def get_savings_log(user_id, limit=30):
     conn = get_conn()
     rows = conn.execute(
-        "SELECT id, amount, note, tx_date FROM savings WHERE user_id=? ORDER BY id DESC LIMIT ?",
+        "SELECT id, amount, currency, note, tx_date FROM savings WHERE user_id=? ORDER BY id DESC LIMIT ?",
         (user_id, limit),
     ).fetchall()
     conn.close()
@@ -124,7 +137,7 @@ def get_savings_log(user_id, limit=30):
 def get_all_transactions(user_id, limit=500):
     conn = get_conn()
     rows = conn.execute(
-        "SELECT id, type, amount, category, note, tx_date, created_at FROM transactions "
+        "SELECT id, type, amount, currency, category, note, tx_date, created_at FROM transactions "
         "WHERE user_id=? ORDER BY tx_date DESC, created_at DESC LIMIT ?",
         (user_id, limit),
     ).fetchall()
