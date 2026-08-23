@@ -51,12 +51,13 @@
   .stamp .month { font-family: 'Fraunces', serif; font-size: 10px; font-weight: 700; letter-spacing: 1px; }
   .stamp .sub { font-family: 'JetBrains Mono', monospace; font-size: 9px; }
   .label-muted { color: var(--inkMuted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px; }
-  .balance { font-size: 30px; font-weight: 700; }
-  .balance .unit { font-size: 16px; color: var(--inkMuted); font-family: 'Inter', sans-serif; }
-  .stats-row { display: flex; gap: 20px; margin-top: 18px; }
+  .balance { font-size: 28px; font-weight: 700; }
+  .balance.secondary { font-size: 18px; margin-top: 4px; color: var(--inkMuted); }
+  .balance .unit { font-size: 15px; color: var(--inkMuted); font-family: 'Inter', sans-serif; }
+  .stats-row { display: flex; gap: 20px; margin-top: 18px; flex-wrap: wrap; }
   .stat { display: flex; align-items: center; gap: 8px; }
   .stat-label { color: var(--inkMuted); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; }
-  .stat-value { font-family: 'JetBrains Mono', monospace; font-size: 14px; font-weight: 600; }
+  .stat-value { font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 600; }
   .perf {
     position: absolute; left: 0; right: 0; bottom: -7px; height: 14px;
     background-image: radial-gradient(circle at 7px 7px, var(--bg) 6px, transparent 7px);
@@ -82,7 +83,7 @@
   .day-group { padding: 0 20px; }
   .day-header { display: flex; justify-content: space-between; align-items: baseline; margin: 20px 0 4px; }
   .day-header h3 { color: var(--gold); font-size: 13px; letter-spacing: 0.05em; text-transform: uppercase; }
-  .day-net { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; }
+  .day-net { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 600; text-align: right; }
   .tx-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--line); }
   .tx-left { display: flex; align-items: center; gap: 12px; }
   .tx-icon { width: 40px; height: 40px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
@@ -111,10 +112,12 @@
   .sheet-header h3 { font-size: 18px; font-weight: 600; }
   .close-btn { background: none; border: none; color: var(--inkMuted); font-size: 20px; cursor: pointer; }
 
-  .type-toggle { display: flex; background: var(--surfaceAlt); border-radius: 14px; padding: 4px; }
-  .type-toggle button { flex: 1; border: none; background: transparent; border-radius: 10px; padding: 10px; font-size: 14px; font-weight: 600; color: var(--inkMuted); cursor: pointer; }
+  .type-toggle, .currency-toggle { display: flex; background: var(--surfaceAlt); border-radius: 14px; padding: 4px; }
+  .currency-toggle { margin-top: 10px; }
+  .type-toggle button, .currency-toggle button { flex: 1; border: none; background: transparent; border-radius: 10px; padding: 10px; font-size: 14px; font-weight: 600; color: var(--inkMuted); cursor: pointer; }
   .type-toggle button.active-expense { background: var(--bg); color: var(--expense); }
   .type-toggle button.active-income { background: var(--bg); color: var(--income); }
+  .currency-toggle button.active-cur { background: var(--bg); color: var(--gold); }
 
   .amount-input-wrap { text-align: center; padding: 16px 0; display: flex; align-items: center; justify-content: center; gap: 8px; }
   .amount-input { font-family: 'JetBrains Mono', monospace; font-size: 36px; font-weight: 700; background: transparent; border: none; outline: none; color: var(--ink); text-align: right; width: 65%; }
@@ -160,10 +163,17 @@ const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : 
 if (tg) { tg.ready(); tg.expand(); tg.setHeaderColor('#11151d'); tg.setBackgroundColor('#11151d'); }
 const initData = tg ? tg.initData : '';
 
-let summary = { balance: 0, monthlyIncome: 0, monthlyExpense: 0, savings: 0, transactions: [] };
+let summary = {
+  balances: { UZS: 0, USD: 0 },
+  monthly: { UZS: { income: 0, expense: 0 }, USD: { income: 0, expense: 0 } },
+  savings: { UZS: 0, USD: 0 },
+  transactions: [],
+};
 let sheetOpen = false;
 let savingsSheetOpen = false;
 let txType = 'expense';
+let currency = 'UZS';
+let savCurrency = 'UZS';
 let amount = '';
 let categoryId = null;
 let dateStr = todayLocal();
@@ -176,8 +186,13 @@ function yesterdayLocal() {
   const d = new Date(); d.setDate(d.getDate()-1);
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
-function fmt(n) { return String(Math.round(Math.abs(n))).replace(/\B(?=(\d{3})+(?!\d))/g, ' '); }
-function fmtSigned(n) { const s = n < 0 ? '-' : n > 0 ? '+' : ''; return s + fmt(n); }
+function fmtUZS(n) { return String(Math.round(Math.abs(n))).replace(/\B(?=(\d{3})+(?!\d))/g, ' '); }
+function fmtUSD(n) { return Math.abs(n).toFixed(2); }
+function fmtAmount(n, cur) { return cur === 'USD' ? `${fmtUSD(n)} $` : `${fmtUZS(n)} so'm`; }
+function fmtSignedAmount(n, cur) {
+  const s = n < 0 ? '-' : n > 0 ? '+' : '';
+  return s + fmtAmount(n, cur);
+}
 function dateLabel(d) {
   if (d === todayLocal()) return 'Bugun';
   if (d === yesterdayLocal()) return 'Kecha';
@@ -201,10 +216,10 @@ async function loadSummary() {
 }
 
 async function addTx() {
-  const amt = parseInt(amount, 10);
+  const amt = parseFloat(amount);
   if (!amt || amt <= 0) return;
   if (txType === 'expense' && !categoryId) return;
-  await api('/api/tx', { method: 'POST', body: JSON.stringify({ type: txType, amount: amt, category: categoryId, date: dateStr }) });
+  await api('/api/tx', { method: 'POST', body: JSON.stringify({ type: txType, amount: amt, currency, category: categoryId, date: dateStr }) });
   sheetOpen = false; amount = ''; categoryId = null; dateStr = todayLocal();
   await loadSummary();
 }
@@ -214,15 +229,15 @@ async function deleteTx(id) {
   await loadSummary();
 }
 
-let savingsData = { total: 0, log: [] };
+let savingsData = { totals: { UZS: 0, USD: 0 }, log: [] };
 async function loadSavings() {
   savingsData = await api('/api/savings');
   render();
 }
 async function addSavings(delta) {
-  const amt = parseInt(amount, 10);
+  const amt = parseFloat(amount);
   if (!amt || amt <= 0) return;
-  await api('/api/savings', { method: 'POST', body: JSON.stringify({ amount: delta > 0 ? amt : -amt, note: null }) });
+  await api('/api/savings', { method: 'POST', body: JSON.stringify({ amount: delta > 0 ? amt : -amt, currency: savCurrency, note: null }) });
   amount = '';
   await loadSummary();
   await loadSavings();
@@ -231,7 +246,7 @@ async function addSavings(delta) {
 function computeCategoryTotals() {
   const monthKey = todayLocal().slice(0,7);
   const map = {};
-  summary.transactions.filter(t => t.type === 'expense' && t.tx_date.slice(0,7) === monthKey)
+  summary.transactions.filter(t => t.type === 'expense' && t.currency === 'UZS' && t.tx_date.slice(0,7) === monthKey)
     .forEach(t => { map[t.category] = (map[t.category] || 0) + t.amount; });
   return Object.entries(map).map(([id, total]) => ({ id, total, ...CATEGORIES[id] })).sort((a,b) => b.total - a.total);
 }
@@ -241,9 +256,9 @@ function groupByDate() {
   summary.transactions.forEach(t => { (map[t.tx_date] = map[t.tx_date] || []).push(t); });
   return Object.keys(map).sort((a,b) => b.localeCompare(a)).map(d => {
     const items = map[d];
-    const income = items.filter(i => i.type === 'income').reduce((s,i) => s+i.amount, 0);
-    const expense = items.filter(i => i.type === 'expense').reduce((s,i) => s+i.amount, 0);
-    return { date: d, items, net: income - expense };
+    const net = { UZS: 0, USD: 0 };
+    items.forEach(i => { net[i.currency] += i.type === 'income' ? i.amount : -i.amount; });
+    return { date: d, items, net };
   });
 }
 
@@ -264,29 +279,38 @@ function txRowHtml(t) {
       <div class="tx-left">
         <div class="tx-icon" style="background:${isIncome ? 'var(--income)22' : cat.color+'22'}">${isIncome ? '💰' : cat.emoji}</div>
         <div>
-          <div class="tx-label">${isIncome ? 'Kirim' : cat.label}</div>
+          <div class="tx-label">${isIncome ? 'Kirim' : cat.label}${t.currency === 'USD' ? ' <span style=\'color:var(--inkMuted);font-size:10px;\'>($)</span>' : ''}</div>
         </div>
       </div>
       <div class="tx-right">
-        <span class="tx-amount mono" style="color:${isIncome ? 'var(--income)' : 'var(--ink)'}">${isIncome ? '+' : '-'}${fmt(t.amount)} so'm</span>
+        <span class="tx-amount mono" style="color:${isIncome ? 'var(--income)' : 'var(--ink)'}">${isIncome ? '+' : '-'}${fmtAmount(t.amount, t.currency)}</span>
         <button class="tx-del" onclick="deleteTx(${t.id})">🗑</button>
       </div>
     </div>
   `;
 }
 
+function dayNetHtml(net) {
+  const parts = [];
+  if (net.UZS !== 0) parts.push(`<div style="color:${net.UZS>0?'var(--income)':'var(--expense)'}">${fmtSignedAmount(net.UZS,'UZS')}</div>`);
+  if (net.USD !== 0) parts.push(`<div style="color:${net.USD>0?'var(--income)':'var(--expense)'}">${fmtSignedAmount(net.USD,'USD')}</div>`);
+  return parts.join('') || `<div style="color:var(--inkMuted)">0</div>`;
+}
+
 function render() {
   const monthAbbrev = MONTHS[new Date().getMonth()].slice(0,4).toUpperCase();
   const catTotals = computeCategoryTotals();
   const groups = groupByDate();
+  const monthlyUZS = summary.monthly.UZS;
+  const monthlyUSD = summary.monthly.USD;
 
   const catChartHtml = catTotals.length === 0
-    ? `<p style="color:var(--inkMuted);font-size:14px;margin:0 20px;">Bu oy hali xarajat yo'q.</p>`
+    ? `<p style="color:var(--inkMuted);font-size:14px;margin:0 20px;">Bu oy hali so'mda xarajat yo'q.</p>`
     : catTotals.map(c => {
-        const pct = summary.monthlyExpense ? Math.round((c.total / summary.monthlyExpense) * 100) : 0;
+        const pct = monthlyUZS.expense ? Math.round((c.total / monthlyUZS.expense) * 100) : 0;
         return `
           <div class="cat-item">
-            <div class="cat-row"><span>${c.emoji} ${c.label}</span><span class="mono">${fmt(c.total)} so'm · ${pct}%</span></div>
+            <div class="cat-row"><span>${c.emoji} ${c.label}</span><span class="mono">${fmtUZS(c.total)} so'm · ${pct}%</span></div>
             <div class="cat-bar-bg"><div class="cat-bar-fill" style="width:${pct}%;background:${c.color}"></div></div>
           </div>
         `;
@@ -298,7 +322,7 @@ function render() {
         <div class="day-group">
           <div class="day-header">
             <h3>${dateLabel(g.date)}</h3>
-            <span class="day-net mono" style="color:${g.net>0?'var(--income)':g.net<0?'var(--expense)':'var(--inkMuted)'}">${fmtSigned(g.net)} so'm</span>
+            <span class="day-net mono">${dayNetHtml(g.net)}</span>
           </div>
           ${g.items.map(txRowHtml).join('')}
         </div>
@@ -313,10 +337,11 @@ function render() {
     <div class="card">
       <div class="stamp"><span class="month">${monthAbbrev}</span><span class="sub">BALANS</span></div>
       <div class="label-muted">Umumiy balans</div>
-      <div class="balance mono" style="color:${summary.balance<0?'var(--expense)':'var(--ink)'}">${fmtSigned(summary.balance)}<span class="unit"> so'm</span></div>
+      <div class="balance mono" style="color:${summary.balances.UZS<0?'var(--expense)':'var(--ink)'}">${fmtSignedAmount(summary.balances.UZS,'UZS')}</div>
+      <div class="balance secondary mono">${fmtSignedAmount(summary.balances.USD,'USD')}</div>
       <div class="stats-row">
-        <div class="stat"><div><div class="stat-label">Kirim (oy)</div><div class="stat-value" style="color:var(--income)">${fmt(summary.monthlyIncome)}</div></div></div>
-        <div class="stat"><div><div class="stat-label">Chiqim (oy)</div><div class="stat-value" style="color:var(--expense)">${fmt(summary.monthlyExpense)}</div></div></div>
+        <div class="stat"><div><div class="stat-label">Kirim (oy)</div><div class="stat-value" style="color:var(--income)">${fmtUZS(monthlyUZS.income)} so'm · ${fmtUSD(monthlyUSD.income)} $</div></div></div>
+        <div class="stat"><div><div class="stat-label">Chiqim (oy)</div><div class="stat-value" style="color:var(--expense)">${fmtUZS(monthlyUZS.expense)} so'm · ${fmtUSD(monthlyUSD.expense)} $</div></div></div>
       </div>
       <div class="perf"></div>
     </div>
@@ -327,7 +352,7 @@ function render() {
       <button class="quick-btn" onclick="openSavingsSheet()">🎯 Jamg'arma</button>
     </div>
 
-    <div class="section-title">Kategoriyalar bo'yicha (bu oy)</div>
+    <div class="section-title">Kategoriyalar bo'yicha (bu oy, so'm)</div>
     ${catChartHtml}
 
     <div class="section-title">Amaliyotlar tarixi</div>
@@ -340,7 +365,16 @@ function render() {
   `;
 
   const amtEl = document.getElementById('amountInput');
-  if (amtEl) { amtEl.focus(); amtEl.oninput = (e) => { amount = e.target.value.replace(/\D/g,''); e.target.value = amount ? fmt(amount) : ''; }; }
+  if (amtEl) {
+    amtEl.focus();
+    amtEl.oninput = (e) => {
+      let v = e.target.value.replace(/[^0-9.]/g, '');
+      const parts = v.split('.');
+      if (parts.length > 2) v = parts[0] + '.' + parts.slice(1).join('');
+      amount = v;
+      e.target.value = v;
+    };
+  }
 }
 
 function txSheetHtml() {
@@ -355,9 +389,13 @@ function txSheetHtml() {
           <button class="${txType==='expense'?'active-expense':''}" onclick="setTxType('expense')">Xarajat</button>
           <button class="${txType==='income'?'active-income':''}" onclick="setTxType('income')">Kirim</button>
         </div>
+        <div class="currency-toggle">
+          <button class="${currency==='UZS'?'active-cur':''}" onclick="setCurrency('UZS')">🇺🇿 so'm</button>
+          <button class="${currency==='USD'?'active-cur':''}" onclick="setCurrency('USD')">💵 $</button>
+        </div>
         <div class="amount-input-wrap">
-          <input id="amountInput" class="amount-input" type="text" inputmode="numeric" placeholder="0" value="${amount ? fmt(amount) : ''}" style="color:${txType==='income'?'var(--income)':'var(--ink)'}" />
-          <span class="amount-unit">so'm</span>
+          <input id="amountInput" class="amount-input" type="text" inputmode="decimal" placeholder="0" value="${amount}" style="color:${txType==='income'?'var(--income)':'var(--ink)'}" />
+          <span class="amount-unit">${currency==='USD'?'$':"so'm"}</span>
         </div>
         ${txType === 'expense' ? `
           <div class="field-label">Kategoriya</div>
@@ -376,7 +414,7 @@ function savingsSheetHtml() {
     ? `<p style="color:var(--inkMuted);font-size:13px;">Hali jamg'armaga hech narsa qo'shilmagan.</p>`
     : savingsData.log.map(r => `
         <div class="savings-log-row">
-          <span style="color:${r.amount>=0?'var(--income)':'var(--expense)'}" class="mono">${r.amount>=0?'+':''}${fmt(r.amount)} so'm</span>
+          <span style="color:${r.amount>=0?'var(--income)':'var(--expense)'}" class="mono">${fmtSignedAmount(r.amount, r.currency)}</span>
           <span style="color:var(--inkMuted)">${r.tx_date}</span>
         </div>
       `).join('');
@@ -387,10 +425,15 @@ function savingsSheetHtml() {
           <h3>🎯 Jamg'arma</h3>
           <button class="close-btn" onclick="savingsSheetOpen=false;render()">✕</button>
         </div>
-        <div class="balance mono" style="text-align:center;margin:8px 0 20px;">${fmt(savingsData.total)}<span class="unit"> so'm</span></div>
+        <div class="balance mono" style="text-align:center;margin:8px 0 2px;">${fmtAmount(savingsData.totals.UZS,'UZS')}</div>
+        <div class="balance secondary mono" style="text-align:center;margin-bottom:16px;">${fmtAmount(savingsData.totals.USD,'USD')}</div>
+        <div class="currency-toggle">
+          <button class="${savCurrency==='UZS'?'active-cur':''}" onclick="setSavCurrency('UZS')">🇺🇿 so'm</button>
+          <button class="${savCurrency==='USD'?'active-cur':''}" onclick="setSavCurrency('USD')">💵 $</button>
+        </div>
         <div class="amount-input-wrap">
-          <input id="amountInput" class="amount-input" type="text" inputmode="numeric" placeholder="0" value="${amount ? fmt(amount) : ''}" />
-          <span class="amount-unit">so'm</span>
+          <input id="amountInput" class="amount-input" type="text" inputmode="decimal" placeholder="0" value="${amount}" />
+          <span class="amount-unit">${savCurrency==='USD'?'$':"so'm"}</span>
         </div>
         <div style="display:flex;gap:12px;margin-top:8px;">
           <button class="submit-btn" style="background:var(--income);color:#0e1712;margin-top:0;" onclick="addSavings(1)">+ Qo'shish</button>
@@ -403,11 +446,13 @@ function savingsSheetHtml() {
   `;
 }
 
-function openSheet(type) { txType = type; amount = ''; categoryId = null; dateStr = todayLocal(); sheetOpen = true; render(); }
+function openSheet(type) { txType = type; currency = 'UZS'; amount = ''; categoryId = null; dateStr = todayLocal(); sheetOpen = true; render(); }
 function closeSheet(e) { if (e.target.classList.contains('overlay')) { sheetOpen = false; render(); } }
 function setTxType(t) { txType = t; categoryId = null; render(); }
+function setCurrency(c) { currency = c; render(); }
+function setSavCurrency(c) { savCurrency = c; render(); }
 function selectCategory(id) { categoryId = id; render(); }
-function openSavingsSheet() { amount = ''; savingsSheetOpen = true; loadSavings(); }
+function openSavingsSheet() { amount = ''; savCurrency = 'UZS'; savingsSheetOpen = true; loadSavings(); }
 function closeSavingsSheet(e) { if (e.target.classList.contains('overlay')) { savingsSheetOpen = false; render(); } }
 
 loadSummary().catch(err => {
