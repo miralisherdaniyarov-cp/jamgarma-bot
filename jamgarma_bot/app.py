@@ -100,7 +100,6 @@ def parse_amount(text):
     return value if value > 0 else None
 
 
-# ---------- Bot: /start ----------
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     if PUBLIC_URL:
@@ -124,7 +123,7 @@ async def balans_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sav_usd = db.get_savings_total(user_id, "USD")
 
     lines = [
-        f"📊 <b>Umumiy balans:</b>",
+        "📊 <b>Umumiy balans:</b>",
         f"  🇺🇿 {fmt_uzs(bal_uzs)} so'm",
         f"  💵 {fmt_usd(bal_usd)} $",
         "",
@@ -332,7 +331,6 @@ async def telegram_webhook(request: Request):
     return {"ok": True}
 
 
-# ---------- Telegram Mini App initData tekshiruvi ----------
 def verify_init_data(init_data: str) -> Optional[dict]:
     try:
         parsed = dict(urllib.parse.parse_qsl(init_data, keep_blank_values=True))
@@ -361,7 +359,6 @@ def get_user_id(x_init_data: Optional[str]) -> int:
     return user["id"]
 
 
-# ---------- Mini App REST API ----------
 class TxIn(BaseModel):
     type: str
     amount: float
@@ -441,5 +438,4 @@ def api_add_savings(s: SavingsIn, x_init_data: Optional[str] = Header(None)):
     return {"ok": True}
 
 
-# ---------- Mini App frontend (static/index.html) ----------
 app.mount("/", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static"), html=True), name="static")
